@@ -173,19 +173,21 @@ float3 ACESInv(float3 y)
 }
 
 // Colour-grade LUT lookup: 32^3 cube unwrapped to a 1024x32 strip (skincolor / cloth grade). Input
-// a gamma-space [0,1] colour; blue selects the 32-px slice, red/green index within it (bilinear + blue lerp).
-float3 ApplyLut(Texture2D lut, float3 c)
+// a gamma-space [0,1] albedo. Ported VERBATIM from endfield_face.hlsl EfFaceSampleSkinLut: MyZmd's
+// 1024x32 LUT is 32 horizontal 32x32 tiles — TILE index from R, within-tile U from G, V from B (flipped).
+float3 ApplyLut(Texture2D lut, float3 albedoSrgb)
 {
-    c = saturate(c);
-    const float N = 32.0;
-    float bl = c.b * (N - 1.0);
-    float b0 = floor(bl), b1 = min(b0 + 1.0, N - 1.0), f = bl - b0;
-    float v  = ((1.0 - c.g) * (N - 1.0) + 0.5) / N;   // green axis stored top=1 → flip V
-    float u0 = (b0 * N + c.r * (N - 1.0) + 0.5) / (N * N);
-    float u1 = (b1 * N + c.r * (N - 1.0) + 0.5) / (N * N);
-    float3 s0 = lut.SampleLevel(gClamp, float2(u0, v), 0).rgb;
-    float3 s1 = lut.SampleLevel(gClamp, float2(u1, v), 0).rgb;
-    return lerp(s0, s1, f);
+    albedoSrgb = saturate(albedoSrgb);
+    albedoSrgb = albedoSrgb.brg;   // EF_*_LUT_USE_BRG=1 (default): B chooses the slice, R/G the plane
+    float2 lutUv     = albedoSrgb.xz * float2(31.0, 0.96875);
+    float  lutFloorX = floor(lutUv.x);
+    float2 lutUvYZ   = albedoSrgb.yz * float2(0.0302734375, 0.96875) + float2(0.00048828125, 0.015625);
+    float  lutUvX    = lutFloorX * 0.03125 + lutUvYZ.x;
+    float2 lutUvFinal = float2(lutUvX, 1.0 - lutUvYZ.y);
+    float  lutTileLerp = albedoSrgb.x * 31.0 - lutFloorX;
+    float3 c0 = lut.SampleLevel(gClamp, lutUvFinal, 0).rgb;
+    float3 c1 = lut.SampleLevel(gClamp, lutUvFinal + float2(0.03125, 0.0), 0).rgb;
+    return lerp(c0, c1, lutTileLerp);
 }
 
 // ===== Endfield toon-lighting core — ported verbatim from the reference endfield_lighting.hlsl
@@ -309,7 +311,15 @@ float4 PSMain(VSOut i) : SV_TARGET
     float  ao = hasPacked ? saturate(P.b) : 1.0;
     float4 rd = (nprMask & 1) ? gRamp.Sample(gClamp, float2(rampNoF, 0.5)) : float4(1, 1, 1, 1);
 
-    float3 baseDark  = baseLin * 0.35;                          // STEP 2: LUT dark colour
+    // STEP 2: dark colour = the skin/cloth LUT lookup (sRGB in → sRGB out → linearise), NOT a darken.
+    // This is the "AO/shadow select the LUT dark colour, never multiply toward black" contract.
+    float3 baseDark;
+    if (nprMask & 4) {
+        float3 lutSrgb = ApplyLut(gLut, pow(max(baseLin, 0.0), 1.0 / 2.2));
+        baseDark = pow(max(lutSrgb, 0.0), 2.2);
+    } else {
+        baseDark = baseLin * 0.35;
+    }
     float3 diffuse   = EfDiffuseBRDF(baseLin, baseDark, ao, shadow, rd, rampNoF);
     diffuse          = EfApplyRampColor(diffuse, rd);
     float3 col = diffuse * lightIntensity;
