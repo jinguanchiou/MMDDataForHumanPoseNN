@@ -239,16 +239,12 @@ float3 EfApplyRampColor(float3 diffuse, float4 ramp)
     return diffRamp * rampCtrl;
 }
 
-// Face SDF (Goo) shadow → the ramp U for the face. 1 = lit, 0 = shadowed. Ported from endfield_face.hlsl:
-// project the to-light L onto the face plane, mirror the SDF UV by light side, then a continuous angular
-// threshold (atan2) drives a sharp sigmoid over the averaged SDF R/G channels. Needs the world head basis.
-float EfFaceSdfMask(Texture2D sdfTex, float2 uv, float3 L, float3 hFront, float3 hRight, float3 hUp)
+// Face SDF (Goo) shadow → the ramp U for the face. 1 = lit, 0 = shadowed. Ported from endfield_face.hlsl.
+// projLight = the to-light L projected onto the face plane (normalized), side = dot(projLight, headRight)
+// — both computed once in the caller and reused by the Rim. A continuous atan2 angular threshold drives a
+// sharp sigmoid over the averaged SDF R/G channels; the SDF UV is mirrored by the light side.
+float EfFaceSdfMask(Texture2D sdfTex, float2 uv, float3 projLight, float side, float3 hFront)
 {
-    float3 projLight = L - dot(L, hUp) * hUp;
-    float  projLen   = length(projLight);
-    if (projLen < 1e-4) return 1.0;               // vertical light: no stable side
-    projLight /= projLen;
-    float  side  = dot(projLight, hRight);
     float2 sdfUV = float2(lerp(1.0 - uv.x, uv.x, step(0.0, side)), uv.y);  // right-side light keeps U
     float4 sdf   = sdfTex.Sample(gClamp, sdfUV);
     float  angle01   = abs(atan2(side, dot(projLight, hFront))) * (1.0 / 3.14159265);
@@ -319,16 +315,36 @@ float4 PSMain(VSOut i) : SV_TARGET
     // --- STEP 1: Endfield core toon diffuse (ported from endfield_lighting.hlsl). Quadratic-NoL ramp,
     //     3-layer blend where AO/shadow/ramp.a SELECT the dark colour (never multiply toward black),
     //     saturation-adaptive ramp hue. dark colour is a plain darken here → STEP 2 swaps in the LUT. ---
-    float NoL    = dot(N, L);
-    float shadow = ShadowVis(i.posW, saturate(NoL));            // 1 lit, 0 shadowed
-    // Face _ST.R: eyes/mouth/ears never shadowed (keeps shadow/SDF off the eye-whites). G (nose/cheek
-    // highlight boost) used in the spec below; B (eyes+mouth) reserved for the SDF pass.
+    float NoL       = dot(N, L);
+    float rawShadow = ShadowVis(i.posW, saturate(NoL));         // 1 lit, 0 shadowed
     bool   isFaceMat = (matClass == 1) && ((nprMask & 2) != 0);
-    float3 faceMask  = isFaceMat ? gSubsurf.Sample(gSamp, i.uv).rgb : float3(1, 0, 0);
-    if (isFaceMat) shadow = lerp(1.0, shadow, faceMask.r);
-    shadow = lerp(1.0, shadow, shadowStrength);                 // shadowStrength scales the received shadow
+    float3 faceMask  = isFaceMat ? gSubsurf.Sample(gSamp, i.uv).rgb : float3(1, 0, 0);   // _ST
+    float4 faceCm    = (isFaceMat && (nprMask & 64)) ? gCm.Sample(gSamp, i.uv) : float4(0, 0, 0, 0);
 
-    float3 camFwd    = normalize(i.posW - cameraPos);           // camera forward (view ray into scene)
+    // Face-plane light projection (the SDF and the Rim share it).
+    float3 projLight = L;  float side = 0.0;
+    if (isFaceMat) {
+        projLight = L - dot(L, headUp) * headUp;
+        float pl  = length(projLight);
+        projLight = (pl > 1e-4) ? projLight / pl : headFront;
+        side      = dot(projLight, headRight);
+    }
+
+    // STEP 4: received scene shadow. Body: _ST.R lift + shadowStrength. Face: the cm_M gate so the FRONT
+    // never takes the scene shadow — only the neck (cm.g) and the camera-behind back of head (cm.b) do.
+    float shadow;
+    if (isFaceMat && (nprMask & 64)) {
+        float camFrontDot      = dot(headFront, V);            // >0 = camera in front of the face
+        float cameraShadowArea = saturate(-2.0 * camFrontDot);
+        cameraShadowArea = cameraShadowArea * cameraShadowArea * (3.0 - 2.0 * cameraShadowArea);
+        float shadowArea = max(saturate(faceCm.g), cameraShadowArea * saturate(faceCm.b));
+        shadow = lerp(1.0, rawShadow, saturate(shadowArea));
+    } else {
+        shadow = isFaceMat ? lerp(1.0, rawShadow, faceMask.r) : rawShadow;
+        shadow = lerp(1.0, shadow, shadowStrength);
+    }
+
+    float3 camFwd    = normalize(i.posW - cameraPos);
     float  backLight = EfBackLight(camFwd, normalize(L.xz + float2(1e-6, 0.0)));
     float4 P  = gPacked.Sample(gSamp, i.uv);
     // STEP 3: the face drives the ramp U from the SDF Goo shadow (not NoL); cm_M.g blends toward
@@ -336,9 +352,8 @@ float4 PSMain(VSOut i) : SV_TARGET
     float  rampNoF;
     float  ao;
     if (isFaceMat && (nprMask & 32) && headValid > 0.5) {
-        float gooMask  = EfFaceSdfMask(gSdf, i.uv, L, headFront, headRight, headUp);
-        float cmmBlend = (nprMask & 64) ? saturate(gCm.Sample(gSamp, i.uv).g) : 0.0;
-        rampNoF = lerp(gooMask, saturate(NoL), cmmBlend);
+        float gooMask  = EfFaceSdfMask(gSdf, i.uv, projLight, side, headFront);
+        rampNoF = lerp(gooMask, saturate(NoL), saturate(faceCm.g));
         ao      = saturate(base.a);                            // face AO = _D.alpha
     } else {
         rampNoF = EfRampNoL(NoL, backLight);
@@ -349,7 +364,6 @@ float4 PSMain(VSOut i) : SV_TARGET
     float4 rd = (nprMask & 1) ? gRamp.Sample(gClamp, float2(rampNoF, 0.5)) : float4(1, 1, 1, 1);
 
     // STEP 2: dark colour = the skin/cloth LUT lookup (sRGB in → sRGB out → linearise), NOT a darken.
-    // This is the "AO/shadow select the LUT dark colour, never multiply toward black" contract.
     float3 baseDark;
     if (nprMask & 4) {
         float3 lutSrgb = ApplyLut(gLut, pow(max(baseLin, 0.0), 1.0 / 2.2));
@@ -357,10 +371,32 @@ float4 PSMain(VSOut i) : SV_TARGET
     } else {
         baseDark = baseLin * 0.35;
     }
-    float3 diffuse   = EfDiffuseBRDF(baseLin, baseDark, ao, shadow, rd, rampNoF);
+    // STEP 4: face SSS (cm_M.r) — warm the BRIGHT albedo where the face turns away from view; the LUT
+    // dark colour is deliberately left untouched, so shadows keep their authored tone.
+    float3 baseLight = baseLin;
+    if (isFaceMat && (nprMask & 64)) {
+        float sssNoV     = saturate(dot(N, V)) * 0.85 + 0.15;
+        float headFrontD = saturate(dot(headFront, V));
+        float viewSss    = lerp(saturate(headFrontD + 0.5), 1.0, saturate(faceCm.g)) * saturate(faceCm.r);
+        float sssArea    = saturate(0.5 * viewSss * (1.0 - sssNoV));   // EF_FACE_SSS_AREA = 0.5
+        const float3 SSS_COLOR = float3(0.822936, 0.669170, 0.648409);
+        baseLight = baseLin * lerp(float3(1, 1, 1), SSS_COLOR, sssArea);
+    }
+    float3 diffuse   = EfDiffuseBRDF(baseLight, baseDark, ao, shadow, rd, rampNoF);
     diffuse          = EfApplyRampColor(diffuse, rd);
     float3 col = diffuse * lightIntensity;
     float  lit = saturate(min(min(ao, shadow), rd.a));          // lit-side factor for spec/rim gating
+
+    // STEP 4: face Rim (cm_M.a) — authored rim region × lit UV half × grazing/front-facing NoV × front-light.
+    if (isFaceMat && (nprMask & 64)) {
+        float faceHalf    = step(i.uv.x, 0.5);
+        faceHalf          = lerp(1.0 - faceHalf, faceHalf, step(0.0, side));
+        float faceNoV     = saturate(dot(headFront, V));
+        float rimViewMask = saturate(faceNoV - 0.75);           // EF_FACE_RIM_NOV_THRESHOLD
+        float rimFront    = saturate(dot(projLight, headFront));
+        float rimMask     = saturate(saturate(faceCm.a) * faceHalf * rimViewMask * rimFront);
+        col += rimMask * lightIntensity;                        // EF_FACE_RIM_COLOR = white
+    }
 
     // Blended overlays (eye-shadow / hair-shadow) are just a flat dark tint over the face — skip
     // all highlights (spec/rim/hair/emissive would put white glints on the black shadow) and blend.
