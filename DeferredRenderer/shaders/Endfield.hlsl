@@ -188,6 +188,51 @@ float3 ApplyLut(Texture2D lut, float3 c)
     return lerp(s0, s1, f);
 }
 
+// ===== Endfield toon-lighting core — ported verbatim from the reference endfield_lighting.hlsl
+// (chris0214 Arknights-Endfield-MME-Shader). See ENDFIELD_RENDERING.md §2. =====
+float Ef_Lum(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+
+// Back-light: camera facing away from the light lifts the dark side.
+float EfBackLight(float3 camFwd, float2 lightDirXZ)
+{
+    float2 cf = normalize(camFwd.xz + float2(1e-6, 0.0));
+    float  b  = saturate(-dot(cf, lightDirXZ));
+    float  by = saturate(-abs(camFwd.y) + 0.75);
+    by = by * by * (3.0 - 2.0 * by);   // smoothstep
+    return b * by;
+}
+
+// Ramp U: quadratic-NoL remap (NOT half-Lambert), back-light lifts the dark side.
+float EfRampNoL(float NoL, float backLight)
+{
+    float rampN  = 0.5 - 0.5 * NoL * NoL;
+    float finalN = clamp(rampN * backLight + NoL, -1.0, 1.0);
+    return finalN * 0.5 + 0.5;
+}
+
+// 3-layer diffuse: AO & shadow & ramp.a SELECT between the light albedo and the dark colour
+// (dark = LUT colour, later). They never multiply toward black — that's the "no dirty/grey dark" key.
+float3 EfDiffuseBRDF(float3 baseLight, float3 baseDark, float ao, float shadow, float4 ramp, float rampNoF)
+{
+    float3 diffDark     = baseDark;
+    float3 diffDarkAttn = diffDark * 0.65;
+    float  aoShaNoF     = (ao * shadow) * rampNoF;
+    float  minShadow    = min(min(ao, shadow), ramp.w);
+    float3 darkLerp     = lerp(diffDarkAttn, diffDark, saturate(aoShaNoF + ramp.w));
+    return lerp(darkLerp, baseLight, minShadow);
+}
+
+// Ramp colour: saturation-adaptive HUE only (grey ramp → neutral), with luminance compensation so
+// the ramp never acts as a second brightness multiplier.
+float3 EfApplyRampColor(float3 diffuse, float4 ramp)
+{
+    float rampSat  = max(max(ramp.r, ramp.g), ramp.b) - min(min(ramp.r, ramp.g), ramp.b);
+    float3 rampEff = ramp.rgb * rampSat + 1.0 - rampSat;
+    float3 diffRamp = diffuse * rampEff;
+    float  rampCtrl = clamp(Ef_Lum(diffuse) / max(0.01, Ef_Lum(diffRamp)), 0.0, 1.5);
+    return diffRamp * rampCtrl;
+}
+
 // Tangent-space normal perturbation from screen-space derivatives (no vertex tangents needed).
 float3 PerturbNormal(float3 N, float3 posW, float2 uv, float3 mapN)
 {
@@ -245,27 +290,30 @@ float4 PSMain(VSOut i) : SV_TARGET
     float3 V = normalize(cameraPos - i.posW);
     float3 H = normalize(L + V);
 
-    // --- Milestone 3: low-contrast binary toon diffuse, now with received cast shadow ---
-    float ndlRaw = dot(N, L);
-    float halfLambert = ndlRaw * 0.5 + 0.5;
-    float shadow = ShadowVis(i.posW, saturate(ndlRaw));          // 1 lit, 0 shadowed
-    // Face _ST shadow-param mask (t7, gSubsurf) — face material only. R is WHITE on skin, DARK at the
-    // eyes / mouth / ear / jaw: those must stay lit (never shadowed), so force shadow→1 where R is low.
-    // This is what keeps a face shadow (and later the SDF) from sweeping across the eye-whites. G marks
-    // the highlight-strengthen region (nose/cheek, used in the spec below); B (eyes+mouth) is reserved
-    // for the SDF pass. hairst_ST feeds hair here too, but the mask logic is gated to matClass==skin.
+    // --- STEP 1: Endfield core toon diffuse (ported from endfield_lighting.hlsl). Quadratic-NoL ramp,
+    //     3-layer blend where AO/shadow/ramp.a SELECT the dark colour (never multiply toward black),
+    //     saturation-adaptive ramp hue. dark colour is a plain darken here → STEP 2 swaps in the LUT. ---
+    float NoL    = dot(N, L);
+    float shadow = ShadowVis(i.posW, saturate(NoL));            // 1 lit, 0 shadowed
+    // Face _ST.R: eyes/mouth/ears never shadowed (keeps shadow/SDF off the eye-whites). G (nose/cheek
+    // highlight boost) used in the spec below; B (eyes+mouth) reserved for the SDF pass.
     bool   isFaceMat = (matClass == 1) && ((nprMask & 2) != 0);
     float3 faceMask  = isFaceMat ? gSubsurf.Sample(gSamp, i.uv).rgb : float3(1, 0, 0);
-    if (isFaceMat) shadow = lerp(1.0, shadow, faceMask.r);   // R low (eyes/mouth/ears) → forced lit
-    float shadowF = halfLambert * lerp(1.0, shadow, shadowStrength);   // cast shadow pushes to dark band
-    float lit = smoothstep(toonThreshold - toonFeather, toonThreshold + toonFeather, shadowF);
-    const float3 shadowTint = float3(0.78, 0.82, 0.95);
-    float3 shade = lerp(shadowTint * shadowDepth, float3(1.0, 1.0, 1.0), lit);
-    // _P packed map: B = ambient occlusion (Arknights Endfield packing). AO fully occludes the
-    // ambient fill and partially deepens the direct diffuse so cavities / seams read with depth.
+    if (isFaceMat) shadow = lerp(1.0, shadow, faceMask.r);
+    shadow = lerp(1.0, shadow, shadowStrength);                 // shadowStrength scales the received shadow
+
+    float3 camFwd    = normalize(i.posW - cameraPos);           // camera forward (view ray into scene)
+    float  backLight = EfBackLight(camFwd, normalize(L.xz + float2(1e-6, 0.0)));
+    float  rampNoF   = EfRampNoL(NoL, backLight);               // ramp U
     float4 P  = gPacked.Sample(gSamp, i.uv);
     float  ao = hasPacked ? saturate(P.b) : 1.0;
-    float3 col = baseLin * shade * lightIntensity * lerp(1.0, ao, 0.6) + baseLin * 0.06 * ao;
+    float4 rd = (nprMask & 1) ? gRamp.Sample(gClamp, float2(rampNoF, 0.5)) : float4(1, 1, 1, 1);
+
+    float3 baseDark  = baseLin * 0.35;                          // STEP 2: LUT dark colour
+    float3 diffuse   = EfDiffuseBRDF(baseLin, baseDark, ao, shadow, rd, rampNoF);
+    diffuse          = EfApplyRampColor(diffuse, rd);
+    float3 col = diffuse * lightIntensity;
+    float  lit = saturate(min(min(ao, shadow), rd.a));          // lit-side factor for spec/rim gating
 
     // Blended overlays (eye-shadow / hair-shadow) are just a flat dark tint over the face — skip
     // all highlights (spec/rim/hair/emissive would put white glints on the black shadow) and blend.
