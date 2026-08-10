@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{FED7C5BC-D101-4A98-BFE1-0F1A4F3D2C99}</ProjectGuid>
+    <RootNamespace>DeferredRenderer</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <PropertyGroup Label="Vcpkg">
+    <VcpkgEnabled>true</VcpkgEnabled>
+    <VcpkgEnableManifest>true</VcpkgEnableManifest>
+    <VcpkgManifestInstall>false</VcpkgManifestInstall>
+    <VcpkgTriplet>x64-windows</VcpkgTriplet>
+    <VcpkgManifestRoot>$(SolutionDir)</VcpkgManifestRoot>
+    <VcpkgInstalledDir>C:\vcpkg-cache\installed\</VcpkgInstalledDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings"></ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)build\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\$(Platform)\$(Configuration)\$(ProjectName)\</IntDir>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <Optimization>Disabled</Optimization>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(SolutionDir)DeferredRenderer\src;$(SolutionDir)third_party\imgui_backends;$(SolutionDir)third_party\saba\src;C:\vcpkg-cache\installed\x64-windows\include;C:\vcpkg-cache\installed\x64-windows\include\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>C:\vcpkg-cache\installed\x64-windows\debug\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;dxguid.lib;d3dcompiler.lib;xaudio2.lib;DirectXTK12.lib;assimp-vc143-mtd.lib;BulletDynamics_Debug.lib;BulletCollision_Debug.lib;LinearMath_Debug.lib;fmtd.lib;imguid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>NDEBUG;_CONSOLE;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <Optimization>MaxSpeed</Optimization>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/utf-8 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalIncludeDirectories>$(SolutionDir)DeferredRenderer\src;$(SolutionDir)third_party\imgui_backends;$(SolutionDir)third_party\saba\src;C:\vcpkg-cache\installed\x64-windows\include;C:\vcpkg-cache\installed\x64-windows\include\bullet;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>C:\vcpkg-cache\installed\x64-windows\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>d3d12.lib;dxgi.lib;dxguid.lib;d3dcompiler.lib;xaudio2.lib;DirectXTK12.lib;assimp-vc143-mt.lib;BulletDynamics.lib;BulletCollision.lib;LinearMath.lib;fmt.lib;imgui.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="src\Main.cpp" />
+    <ClCompile Include="src\Renderer.cpp" />
+    <ClCompile Include="src\Audio.cpp" />
+    <ClCompile Include="src\Console.cpp" />
+    <ClCompile Include="src\Camera.cpp" />
+    <ClCompile Include="src\Scene.cpp" />
+    <ClCompile Include="src\AssetLoader.cpp" />
+    <ClCompile Include="src\MmdLoader.cpp" />
+    <ClCompile Include="src\DatasetGen.cpp" />
+  </ItemGroup>
+  <!-- Saba (PMX/VMD loader) compiled from source under third_party\saba. Warnings off and
+       /sdl + /permissive- disabled because it is vendored third-party code; Saba-only defines
+       (GLM gtx, codecvt deprecation) are scoped here so they don't clash with Common.h. -->
+  <ItemGroup>
+    <ClCompile Include="..\third_party\imgui_backends\imgui_impl_win32.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="..\third_party\imgui_backends\imgui_impl_dx12.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Base\File.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Base\Log.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Base\Path.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Base\Singleton.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Base\Time.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Base\UnicodeUtil.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\MMDCamera.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\MMDIkSolver.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\MMDMaterial.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\MMDModel.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\MMDMorph.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\MMDNode.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\MMDPhysics.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\PMDFile.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\PMDModel.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\PMXFile.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\PMXModel.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\SjisToUnicode.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\VMDAnimation.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\VMDCameraAnimation.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\VMDFile.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\saba\src\Saba\Model\MMD\VPDFile.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <SDLCheck>false</SDLCheck>
+      <ConformanceMode>false</ConformanceMode>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;_SILENCE_CXX17_CODECVT_DEPRECATION_WARNING;_CRT_SECURE_NO_WARNINGS;NOMINMAX;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\Common.h" />
+    <ClInclude Include="src\Renderer.h" />
+    <ClInclude Include="src\Audio.h" />
+    <ClInclude Include="src\Console.h" />
+    <ClInclude Include="src\Camera.h" />
+    <ClInclude Include="src\Scene.h" />
+    <ClInclude Include="src\AssetLoader.h" />
+    <ClInclude Include="src\MmdLoader.h" />
+    <ClInclude Include="src\DatasetGen.h" />
+    <ClInclude Include="src\Input.h" />
+    <ClInclude Include="..\third_party\imgui_backends\imgui_impl_win32.h" />
+    <ClInclude Include="..\third_party\imgui_backends\imgui_impl_dx12.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\Geometry.hlsl">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <DeploymentContent>true</DeploymentContent>
+    </None>
+    <None Include="shaders\Lighting.hlsl">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <DeploymentContent>true</DeploymentContent>
+    </None>
+    <None Include="shaders\PostProcess.hlsl">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <DeploymentContent>true</DeploymentContent>
+    </None>
+    <None Include="shaders\Shadow.hlsl">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <DeploymentContent>true</DeploymentContent>
+    </None>
+    <None Include="shaders\Ssao.hlsl">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <DeploymentContent>true</DeploymentContent>
+    </None>
+    <None Include="shaders\LightCulling.hlsl">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <DeploymentContent>true</DeploymentContent>
+    </None>
+    <None Include="shaders\PointShadow.hlsl">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <DeploymentContent>true</DeploymentContent>
+    </None>
+    <None Include="shaders\BloomSphere.hlsl">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <DeploymentContent>true</DeploymentContent>
+    </None>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets"></ImportGroup>
+
+  <ItemGroup>
+    <VcpkgRuntimeDll Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"
+                     Include="C:\vcpkg-cache\installed\x64-windows\debug\bin\*.dll" />
+    <VcpkgRuntimeDll Condition="'$(Configuration)|$(Platform)'=='Release|x64'"
+                     Include="C:\vcpkg-cache\installed\x64-windows\bin\*.dll" />
+  </ItemGroup>
+  <Target Name="CopyVcpkgRuntimeDlls" AfterTargets="Link"
+          Inputs="@(VcpkgRuntimeDll)"
+          Outputs="@(VcpkgRuntimeDll -> '$(OutDir)%(Filename)%(Extension)')">
+    <Copy SourceFiles="@(VcpkgRuntimeDll)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

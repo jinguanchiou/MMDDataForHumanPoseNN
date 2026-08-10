@@ -1,0 +1,48 @@
+# === Build output ===
+build/
+bin/
+obj/
+x64/
+Debug/
+Release/
+.vs/
+*.user
+*.pdb
+*.ilk
+*.exe
+*.obj
+*.iobj
+*.ipdb
+*.exp
+*.lib
+*.tlog
+*.log
+
+# === Large assets / game rips (copyright, too big for GitHub) ===
+data/
+sponza/
+motion/
+*.zip
+
+# === vcpkg install trees (built from vcpkg.json manifest) ===
+vcpkg_installed/
+
+# === Scratch / screenshot output dirs ===
+screenshots/
+survey/
+survey2/
+survey3/
+clean/
+chan/
+lit/
+hairtest/
+depth_check/
+
+# === Misc ===
+Thumbs.db
+*.tmp
+
+# editor/runtime temp
+~$*
+imgui.ini
+tex_types.png

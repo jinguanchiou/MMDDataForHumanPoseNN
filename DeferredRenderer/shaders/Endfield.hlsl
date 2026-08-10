@@ -1,0 +1,382 @@
+// Endfield-style (Arknights: Endfield) character — dedicated FORWARD NPR+PBR pass, drawn over the
+// deferred scene into the linear HDR target and depth-tested against the scene depth.
+//
+// Milestones: 1 unlit BaseColor + channel debug; 3 low-contrast binary toon diffuse; 4 back-face
+// outline; 6 NPR+PBR hybrid spec (metal/rough from _P, GUI-selectable channels); 7 (partial) rim
+// light + emissive + _N normal detail. No ILM/Ramp/Face-SDF in this rip → cool shadow tint.
+cbuffer PerFrame : register(b0)
+{
+    row_major float4x4 viewProj;
+    row_major float4x4 invViewProj;
+    float3 cameraPos;        uint  viewMode;
+    float3 lightDirToLight;  float zNear;
+    float3 lightIntensity;   float zFar;
+    row_major float4x4 lightViewProj;   // directional-light shadow matrix
+    float  shadowBias;       float shadowTexel;
+    float  outlineDarken;    float _pad1;
+    float4 captureBg;
+};
+
+cbuffer EndfieldObject : register(b1)
+{
+    row_major float4x4 world;
+    int    debugMode;      // 0 toon, 1 BaseColor, 2 Normal, 3-6 Packed.rgba, 7 Mask, 8 Emissive
+    float  outlineWidth;   // outline screen-space width (px)
+    float  toonThreshold;  // binary-diffuse threshold on half-lambert
+    float  toonFeather;    // anti-alias width around the threshold
+    float2 screenSize;     // for constant-width outline extrusion
+    // Per-submesh map presence: a missing map falls back to a WHITE 1x1 in the heap, so without
+    // these flags a material with no _E would sample white → glow, no _P → metallic=1, etc.
+    int    hasPacked;
+    int    hasEmissive;
+    int    hasNormal;
+    int    isHair;         // hair material → anisotropic angel-ring highlight
+    int    transparentMode;// 0 = opaque (alpha-clip + full PBR); 1 = blended overlay (flat shadow tint)
+    int    matClass;       // 0 cloth,1 skin,2 hair,3 eye,4 metal (used by Wuwa/ZZZ; ignored here)
+    float3 matDiffuse;     // PMX material diffuse colour (texture-less overlays carry their tint here)
+    float  matAlpha;       // PMX material alpha (overlays are sub-1 → alpha-blended)
+    int    sphereMode;
+    float  outlineScale;     // 0..1 — CPU-computed from the character's on-screen height; 0 = no outline
+    float  matcapStrength; float satBoost;   // ZZZ-only; layout parity here
+    float  outlineDepthBias;
+    float  postExposure;     // global tonemap exposure  (texture-fidelity pre-inversion, matches ZZZ)
+    float  postVibrance;     // global tonemap vibrance
+    float  texFidelity;      // 0..1: undo the shared post chain so the char keeps its painted albedo (fixes 發白)
+    int    nprMask;          // Endfield full-NPR: bit0 ramp,1 subsurf,2 lut,3 reflect,4 hairdetail,5 sdf,6 cm,7 hl
+};
+
+// Constant-screen-pixel outline, scaled by outlineScale (from the character's projected size). When
+// the character is small on screen (outlineScale → 0) the offset vanishes, so the outline verts sit
+// on the mesh and the main pass hides them → no thin aliased line on a far/small character.
+float2 OutlineOffset(float4 clip, float2 nClip, float3 posW, float3 camPos)
+{
+    return nClip * (outlineWidth * outlineScale * 2.0 / max(screenSize, 1.0)) * clip.w;
+}
+
+cbuffer EndfieldMaterial : register(b2)   // look/material params (set once per frame)
+{
+    int   metalChan;      // which _P channel is metallic (0=R 1=G 2=B 3=A)
+    int   roughChan;      // which _P channel is roughness
+    int   invertRough;    // 1 = roughness = 1 - channel (pack stores smoothness)
+    float specStrength;   // overall highlight strength (kept LOW per spec)
+    float roughBias;      // added to roughness
+    float rimStrength;
+    float rimPower;
+    float emissStrength;
+    float useNormalMap;   // 1 = perturb by _N
+    float hairStrength;   // anisotropic angel-ring highlight strength
+    float normalYSign;    // +1 keep, -1 flip green channel (DirectX vs OpenGL normal convention)
+    float shadowStrength; // 0 = ignore cast shadow, 1 = full
+    float3 rimColor;      float shadowDepth;   // dark-side brightness (lower = darker; low-contrast ≈ 0.6)
+    float  _zzz0, _zzz1, _zzz2, _zzz3;         // ZZZ colour-grade row (deepen/warmth/eyeLift/_mpad) — unused here
+    float  charShadows, charHighlights, specFocus, sheenStrength;   // per-char tone + spec focus + leather sheen
+};
+
+Texture2D    gBase   : register(t0);   // _D BaseColor
+Texture2D    gNormal : register(t1);   // _N / _HN
+Texture2D    gPacked : register(t2);   // _P packed PBR (channels selectable)
+Texture2D    gMask   : register(t3);   // _M mask
+Texture2D    gEmiss  : register(t4);   // _E emissive
+Texture2D<float>       gShadow     : register(t5);   // directional shadow map (received)
+// Endfield "full NPR" experiment maps (t6..t13) — white 1x1 when absent.
+Texture2D    gRamp     : register(t6);    // _RD 1D toon diffuse ramp (dark→light)
+Texture2D    gSubsurf  : register(t7);    // _ST subsurface scatter tint
+Texture2D    gLut      : register(t8);    // colour-grade LUT (1024x32 unwrapped 32^3)
+Texture2D    gReflect  : register(t9);    // _RS reflection/spec env sphere
+Texture2D    gSdf      : register(t10);   // face shadow SDF        (model-wide)
+Texture2D    gCm       : register(t11);   // face colour/makeup mask (model-wide)
+Texture2D    gHl       : register(t12);   // face highlight mask     (model-wide)
+Texture2D    gHairDet  : register(t13);   // hair strand / hairline detail mask
+SamplerState           gSamp       : register(s0);
+SamplerComparisonState gShadowSamp : register(s1);
+SamplerState           gClamp      : register(s2);   // clamp-linear for ramps/LUT/matcap lookups
+
+// PCF directional-shadow visibility (1 = lit, 0 = shadowed) — the character now RECEIVES the
+// directional shadow (self-shadow + cast from the scene), matching the deferred path.
+float ShadowVis(float3 worldPos, float ndl)
+{
+    float4 lp = mul(float4(worldPos, 1.0), lightViewProj);
+    lp.xyz /= lp.w;
+    float2 uv = lp.xy * float2(0.5, -0.5) + 0.5;
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0 || lp.z > 1.0) return 1.0;
+    float bias = max(shadowBias * (1.0 - ndl), shadowBias * 0.2);
+    float cmp = lp.z - bias;
+    float s = 0.0;
+    [unroll] for (int y = -1; y <= 1; ++y)
+        [unroll] for (int x = -1; x <= 1; ++x)
+            s += gShadow.SampleCmpLevelZero(gShadowSamp, uv + float2(x, y) * shadowTexel, cmp);
+    return s / 9.0;
+}
+
+struct VSIn  { float3 pos : POSITION; float3 nrm : NORMAL; float2 uv : TEXCOORD0; };
+struct VSOut { float4 pos : SV_POSITION; float3 nrmW : NORMAL; float2 uv : TEXCOORD0; float3 posW : TEXCOORD1; };
+
+VSOut VSMain(VSIn i)
+{
+    VSOut o;
+    float4 wp = mul(float4(i.pos, 1.0), world);
+    o.posW = wp.xyz;
+    o.pos  = mul(wp, viewProj);
+    o.nrmW = normalize(mul(i.nrm, (float3x3)world));
+    o.uv   = i.uv;
+    return o;
+}
+
+// Outline pass VS: back-face expansion. Extrude along the normal in clip space, scaled by w and
+// the screen size so the outline is a constant pixel width regardless of distance.
+VSOut VSOutline(VSIn i)
+{
+    VSOut o;
+    float4 wp   = mul(float4(i.pos, 1.0), world);
+    float3 nW   = normalize(mul(i.nrm, (float3x3)world));
+    // Depth-aware: push the outline shell AWAY from the camera. The body (drawn after, nearer)
+    // then hides the outline wherever a self-overlap's depth gap is smaller than the push — so
+    // internal overlaps lose the line while true silhouettes (large gap vs background) keep it.
+    wp.xyz += normalize(wp.xyz - cameraPos) * outlineDepthBias;
+    float4 clip = mul(wp, viewProj);
+    float2 nClip = normalize(mul(nW, (float3x3)viewProj).xy + 1e-5);
+    clip.xy += OutlineOffset(clip, nClip, wp.xyz, cameraPos);
+    o.pos  = clip;
+    o.posW = wp.xyz;
+    o.nrmW = nW;
+    o.uv   = i.uv;
+    return o;
+}
+
+float4 PSOutline(VSOut i) : SV_TARGET
+{
+    float4 base = gBase.Sample(gSamp, i.uv);
+    clip(base.a - 0.3);
+    return float4(0.0, 0.0, 0.0, 1.0);   // pure black outline (user preference)
+}
+
+float chan4(float4 v, int c) { return (c == 0) ? v.r : (c == 1) ? v.g : (c == 2) ? v.b : v.a; }
+
+// Camera-basis view-space normal → matcap/reflection UV (no view matrix needed). .y ~ how much the
+// normal points "up" in view space — used to place a top studio softbox for the latex reflection.
+float2 MatCapUV(float3 N, float3 posW)
+{
+    float3 vdir   = normalize(cameraPos - posW);
+    float3 vright = normalize(cross(float3(0, 1, 0), vdir));
+    float3 vup    = cross(vdir, vright);
+    return float2(dot(N, vright), dot(N, vup)) * 0.5 + 0.5;
+}
+
+// Analytic inverse of the Narkowicz ACES curve (PostProcess.hlsl). Given a post-tonemap value y in
+// [0,1), returns the HDR x with ACES(x)=y — used to pre-invert the shared exposure→ACES→gamma→vibrance
+// tonemap so the character reproduces its painted albedo (the "整體發白" fix; same as ZZZ).
+float3 ACESInv(float3 y)
+{
+    y = clamp(y, 0.0, 0.9999);
+    float3 disc = max(-1.0127 * y * y + 1.3702 * y + 0.0009, 0.0);
+    return (0.03 - 0.59 * y - sqrt(disc)) / (4.86 * y - 5.02);
+}
+
+// Colour-grade LUT lookup: 32^3 cube unwrapped to a 1024x32 strip (skincolor / cloth grade). Input
+// a gamma-space [0,1] colour; blue selects the 32-px slice, red/green index within it (bilinear + blue lerp).
+float3 ApplyLut(Texture2D lut, float3 c)
+{
+    c = saturate(c);
+    const float N = 32.0;
+    float bl = c.b * (N - 1.0);
+    float b0 = floor(bl), b1 = min(b0 + 1.0, N - 1.0), f = bl - b0;
+    float v  = ((1.0 - c.g) * (N - 1.0) + 0.5) / N;   // green axis stored top=1 → flip V
+    float u0 = (b0 * N + c.r * (N - 1.0) + 0.5) / (N * N);
+    float u1 = (b1 * N + c.r * (N - 1.0) + 0.5) / (N * N);
+    float3 s0 = lut.SampleLevel(gClamp, float2(u0, v), 0).rgb;
+    float3 s1 = lut.SampleLevel(gClamp, float2(u1, v), 0).rgb;
+    return lerp(s0, s1, f);
+}
+
+// Tangent-space normal perturbation from screen-space derivatives (no vertex tangents needed).
+float3 PerturbNormal(float3 N, float3 posW, float2 uv, float3 mapN)
+{
+    float3 dp1 = ddx(posW), dp2 = ddy(posW);
+    float2 du1 = ddx(uv),   du2 = ddy(uv);
+    float3 T = dp1 * du2.y - dp2 * du1.y;
+    float3 B = dp2 * du1.x - dp1 * du2.x;
+    float invmax = rsqrt(max(dot(T, T), dot(B, B)) + 1e-8);
+    return normalize(mapN.x * (T * invmax) + mapN.y * (B * invmax) + mapN.z * N);
+}
+
+float4 PSMain(VSOut i) : SV_TARGET
+{
+    float4 base = gBase.Sample(gSamp, i.uv);
+    // Fold in the PMX material colour/alpha. Texture-less overlay meshes (eye-shadow / hair-shadow)
+    // carry a dark diffuse + sub-1 alpha here → this turns the white fallback into their true tint.
+    base.rgb *= matDiffuse;
+    base.a   *= matAlpha;
+    // Opaque materials use a hard cutout (lashes/hair edges); blended overlays only drop fully clear.
+    clip(base.a - (transparentMode == 0 ? 0.3 : 0.004));
+
+    // --- Debug channel views (2..8) ---
+    if (debugMode >= 2) {
+        float3 c;
+        // Gate each channel by the map's presence, so a material that LACKS the map shows BLACK
+        // rather than the white 1x1 fallback (which made the _P-less face read as "fully metallic").
+        if      (debugMode == 2) c = (hasNormal   != 0) ? gNormal.Sample(gSamp, i.uv).rgb : float3(0, 0, 0);
+        else if (debugMode == 3) c = (hasPacked   != 0) ? gPacked.Sample(gSamp, i.uv).rrr : float3(0, 0, 0);
+        else if (debugMode == 4) c = (hasPacked   != 0) ? gPacked.Sample(gSamp, i.uv).ggg : float3(0, 0, 0);
+        else if (debugMode == 5) c = (hasPacked   != 0) ? gPacked.Sample(gSamp, i.uv).bbb : float3(0, 0, 0);
+        else if (debugMode == 6) c = (hasPacked   != 0) ? gPacked.Sample(gSamp, i.uv).aaa : float3(0, 0, 0);
+        else if (debugMode == 7) c = gMask.Sample(gSamp, i.uv).rgb;   // (no hasMask flag)
+        else                     c = (hasEmissive != 0) ? gEmiss.Sample(gSamp, i.uv).rgb : float3(0, 0, 0);
+        return float4(pow(max(c, 0.0), 2.2), 1.0);
+    }
+
+    float3 baseLin = pow(max(base.rgb, 0.0), 2.2);
+    if (debugMode == 1) return float4(baseLin, 1.0);   // unlit BaseColor
+
+    // --- Normal (perturbed by _N only where the material actually has one; face has no _N →
+    //     geometric normal, per spec. Without the hasNormal gate the white 1x1 fallback would
+    //     read (1,1,1) and skew the normal) ---
+    float3 N = normalize(i.nrmW);
+    if (useNormalMap > 0.5 && hasNormal != 0) {
+        float3 mapN;
+        mapN.xy = gNormal.Sample(gSamp, i.uv).xy * 2.0 - 1.0;
+        mapN.y *= normalYSign;   // DirectX (Y+) vs OpenGL (Y-) tangent-normal green-channel convention
+        // RECONSTRUCT Z from XY — these rips ship 2-channel (RG) normal maps with B=0; reading B
+        // directly gave z=-1, which FLIPPED the surface normal → wrong lighting / the "weird
+        // reflection". This is also correct for 3-channel maps (a unit normal has B=sqrt(1-x²-y²)).
+        mapN.z = sqrt(saturate(1.0 - dot(mapN.xy, mapN.xy)));
+        N = PerturbNormal(N, i.posW, i.uv, mapN);
+    }
+    float3 L = normalize(lightDirToLight);
+    float3 V = normalize(cameraPos - i.posW);
+    float3 H = normalize(L + V);
+
+    // --- Milestone 3: low-contrast binary toon diffuse, now with received cast shadow ---
+    float ndlRaw = dot(N, L);
+    float halfLambert = ndlRaw * 0.5 + 0.5;
+    float shadow = ShadowVis(i.posW, saturate(ndlRaw));          // 1 lit, 0 shadowed
+    // Face _ST shadow-param mask (t7, gSubsurf) — face material only. R is WHITE on skin, DARK at the
+    // eyes / mouth / ear / jaw: those must stay lit (never shadowed), so force shadow→1 where R is low.
+    // This is what keeps a face shadow (and later the SDF) from sweeping across the eye-whites. G marks
+    // the highlight-strengthen region (nose/cheek, used in the spec below); B (eyes+mouth) is reserved
+    // for the SDF pass. hairst_ST feeds hair here too, but the mask logic is gated to matClass==skin.
+    bool   isFaceMat = (matClass == 1) && ((nprMask & 2) != 0);
+    float3 faceMask  = isFaceMat ? gSubsurf.Sample(gSamp, i.uv).rgb : float3(1, 0, 0);
+    if (isFaceMat) shadow = lerp(1.0, shadow, faceMask.r);   // R low (eyes/mouth/ears) → forced lit
+    float shadowF = halfLambert * lerp(1.0, shadow, shadowStrength);   // cast shadow pushes to dark band
+    float lit = smoothstep(toonThreshold - toonFeather, toonThreshold + toonFeather, shadowF);
+    const float3 shadowTint = float3(0.78, 0.82, 0.95);
+    float3 shade = lerp(shadowTint * shadowDepth, float3(1.0, 1.0, 1.0), lit);
+    // _P packed map: B = ambient occlusion (Arknights Endfield packing). AO fully occludes the
+    // ambient fill and partially deepens the direct diffuse so cavities / seams read with depth.
+    float4 P  = gPacked.Sample(gSamp, i.uv);
+    float  ao = hasPacked ? saturate(P.b) : 1.0;
+    float3 col = baseLin * shade * lightIntensity * lerp(1.0, ao, 0.6) + baseLin * 0.06 * ao;
+
+    // Blended overlays (eye-shadow / hair-shadow) are just a flat dark tint over the face — skip
+    // all highlights (spec/rim/hair/emissive would put white glints on the black shadow) and blend.
+    if (transparentMode != 0)
+        return float4(col, base.a);
+
+    // --- Milestone 6: NPR+PBR hybrid highlight (metal/rough from _P; kept low-intensity) ---
+    // No _P → neutral dielectric (metal 0, medium roughness) rather than the white fallback's 1,1.
+    // (P was sampled above for AO; reuse it for metal/rough.)
+    float  metal = hasPacked ? saturate(chan4(P, metalChan)) : 0.0;
+    float  rough = hasPacked
+                 ? saturate((invertRough ? 1.0 - chan4(P, roughChan) : chan4(P, roughChan)) + roughBias)
+                 : 0.5;
+    // Metals have (almost) NO diffuse — their look is the reflection, not a lit base colour. Our
+    // shader lit the metal albedo as diffuse, so gunmetal/buckles came out grey instead of black.
+    // Suppress the diffuse where metallic (from _P.R) so those parts read dark, per the game.
+    col *= (1.0 - metal * 0.9);
+    float  focusRough = rough * (1.0 - specFocus * 0.7);   // specFocus tightens the GGX lobe ONLY
+    float  ndh = saturate(dot(N, H));
+    float  ndl = saturate(dot(N, L));
+    float  ndv = saturate(dot(N, V));
+    // NPR: clean narrow Blinn-Phong highlight, gated to the lit side. specFocus shifts + narrows the
+    // smoothstep window so the highlight becomes a smaller, more concentrated spot.
+    float  nprSpec = smoothstep(lerp(0.72, 0.90, specFocus), lerp(0.76, 0.93, specFocus), ndh) * lit;
+    // PBR: GGX (Cook-Torrance NDF), higher roughness reads matte per spec.
+    float  a  = max(focusRough * focusRough, 0.002);
+    float  d  = (ndh * ndh * (a * a - 1.0) + 1.0);
+    float  ggx = (a * a) / (3.14159 * d * d + 1e-5);
+    float  pbrSpec = ggx * ndl;
+    float3 specTint = lerp(float3(1.0, 1.0, 1.0), baseLin, metal);   // metal tints the highlight
+    float  spec = lerp(nprSpec, pbrSpec, metal) * specStrength;
+    // Face _ST.G marks the nose/cheek highlight-strengthen region → lift the highlight there (kept
+    // restrained per the low-contrast style).
+    if (isFaceMat) spec *= (1.0 + faceMask.g * 0.6);
+    col += spec * specTint * lightIntensity;
+
+    // --- Leather / latex sheen: the broad, wet specular that makes the bodysuit read as leather.
+    //     It is NOT a tight glint — it is a WIDE soft lobe + a Fresnel edge-glow that spreads over the
+    //     whole curved surface. Gated by hasPacked (face/skin have no _P → NO sheen, so the face stays
+    //     matte) and scaled by SMOOTHNESS² from _P.A, so only the low-roughness leather glows strongly
+    //     while matte cloth/skin stay flat — this is how the game gets "衣服亮、臉不亮" from one control. ---
+    if (hasPacked != 0 && sheenStrength > 0.0) {
+        // VIRTUAL front key light (camera-relative, tilted up): the scene sun is at a fixed off-angle
+        // that never reflects toward the camera, so add a fake studio light in front of the character
+        // just for this sheen — its reflection lands facing the camera → the broad latex sweep. NOT
+        // gated by the scene shadow (latex reflects the environment even on the shadow side).
+        // Key light tilted strongly UP-and-front (not straight at the camera) so the reflection is a
+        // DEFINED band down the lit curves, not a flat wash over the whole camera-facing surface.
+        // "Leather" = a DARK dielectric (the latex bodysuit), detected by ALBEDO DARKNESS (roughness
+        // can't separate it from the also-mid-rough white jacket, but dark-vs-white does).
+        float  albLuma    = dot(baseLin, float3(0.2126, 0.7152, 0.0722));
+        float  leatherAmt = saturate(1.0 - albLuma * 3.5) * (1.0 - metal);
+        float2 mc         = MatCapUV(N, i.posW);
+        // REAL matcap (bound to t3 for Endfield when the model ships one — a dark studio-env sphere
+        // with a bright window/star reflection) → dark latex + wet highlight. Falls back to a
+        // procedural studio band if no matcap. LERP (not add) so the dark areas stay dark, no wash.
+        float3 studio;
+        if (sphereMode != 0)   // sphereMode reused as "has matcap" for Endfield
+            studio = pow(max(gMask.Sample(gSamp, float2(mc.x, 1.0 - mc.y)).rgb, 0.0), 2.2);
+        else {
+            float band = smoothstep(0.55, 0.97, mc.y);
+            studio = lerp(float3(0.015, 0.015, 0.02), float3(1.0, 1.0, 1.0), band);
+        }
+        float  reflW = leatherAmt * saturate(sheenStrength) * lerp(0.5, 1.0, pow(1.0 - ndv, 3.0));
+        col = lerp(col * lerp(1.0, 0.55, leatherAmt * saturate(sheenStrength)), studio, saturate(reflW));
+    }
+
+    // --- Milestone 7: hair anisotropic "angel ring" (Kajiya-Kay approx; MMD has no hair tangent,
+    //     so approximate the strand direction as circling the head horizontally) ---
+    if (isHair != 0 && hairStrength > 0.0) {
+        float3 T = normalize(cross(N, float3(0.0, 1.0, 0.0)) + 1e-4);
+        float  dTH = dot(T, H);
+        float  sinTH = sqrt(saturate(1.0 - dTH * dTH));
+        // _P.G = hair anisotropic-highlight mask → the sheen appears where the texture marks the
+        // strand highlights (broken band), not as a uniform ring. Small floor keeps a base sheen.
+        float  hairMask = hasPacked ? saturate(P.g + 0.1) : 1.0;
+        col += pow(sinTH, 120.0) * hairStrength * lit * lightIntensity * hairMask;
+    }
+
+    // --- Milestone 7: rim light (subtle, environment-tinted) + emissive ---
+    float rim = pow(1.0 - ndv, rimPower) * rimStrength * lit;
+    col += rim * rimColor;
+    if (hasEmissive != 0)                     // no _E → no glow (was sampling the white fallback)
+        col += pow(max(gEmiss.Sample(gSamp, i.uv).rgb, 0.0), 2.2) * emissStrength;
+
+    // --- Character-only Highlights / Shadows detail (luminance-masked, MULTIPLICATIVE so it survives
+    //     the global exposure→ACES→gamma tonemap). shadows>0 lifts dark detail; highlights<0 recovers
+    //     bright detail (pulls blown highlights down). Only the character is affected, not Sponza. ---
+    if (abs(charShadows) + abs(charHighlights) > 1e-4) {
+        float l      = sqrt(saturate(dot(col, float3(0.2126, 0.7152, 0.0722))));   // perceptual-ish luma
+        float shMask = 1.0 - smoothstep(0.0, 0.5, l);
+        float hiMask = smoothstep(0.5, 1.0, l);
+        col *= 1.0 + charShadows    * 0.6 * shMask;
+        col *= 1.0 + charHighlights * 0.6 * hiMask;
+        col = max(col, 0.0);
+    }
+
+    // --- Texture-colour fidelity (fixes "整體發白"): the character is composited into the HDR scene
+    //     then run through the shared exposure→ACES→gamma→vibrance tonemap tuned for Sponza, which
+    //     brightens + desaturates it (a dark latex bodysuit washes to grey). Pre-invert that chain so
+    //     the COMPOSITED character lands back on the colour we shaded. LDR range only; HDR glints keep
+    //     their excess so specular still blooms. texFidelity blends stylised (0) ↔ exact texture (1). ---
+    if (texFidelity > 0.001) {
+        float3 clamped = saturate(col);
+        float3 excess  = col - clamped;
+        float3 tSrgb   = pow(clamped, 1.0 / 2.2);
+        float  invExp  = 1.0 / max(postExposure, 0.01);
+        // Undo exposure + ACES ONLY (this is what whitened the dark leather). KEEP vibrance — undoing
+        // it was what drained the skin/hair colour. (postVibrance is intentionally unused here now.)
+        float3 comp    = min(ACESInv(pow(tSrgb, 2.2)) * invExp, 2.0) + excess * invExp;
+        col = lerp(col, comp, saturate(texFidelity));
+    }
+    return float4(col, base.a);
+}

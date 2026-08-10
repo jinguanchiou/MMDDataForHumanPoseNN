@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="src">
+      <UniqueIdentifier>{c2c8e0a8-1101-4a8e-9f4f-1a0bb0b0b0b1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="shaders">
+      <UniqueIdentifier>{2a2c64df-7e0a-4cde-9f3a-7c2b1db4f077}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="third_party\imgui_backends">
+      <UniqueIdentifier>{4b9d2f1a-3c5e-4a7b-8d2f-6e1c9a0b3d44}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\Main.cpp"><Filter>src</Filter></ClCompile>
+    <ClCompile Include="src\Renderer.cpp"><Filter>src</Filter></ClCompile>
+    <ClCompile Include="src\Audio.cpp"><Filter>src</Filter></ClCompile>
+    <ClCompile Include="src\Console.cpp"><Filter>src</Filter></ClCompile>
+    <ClCompile Include="src\Camera.cpp"><Filter>src</Filter></ClCompile>
+    <ClCompile Include="src\Scene.cpp"><Filter>src</Filter></ClCompile>
+    <ClCompile Include="src\AssetLoader.cpp"><Filter>src</Filter></ClCompile>
+    <ClCompile Include="src\MmdLoader.cpp"><Filter>src</Filter></ClCompile>
+    <ClCompile Include="..\third_party\imgui_backends\imgui_impl_win32.cpp"><Filter>third_party\imgui_backends</Filter></ClCompile>
+    <ClCompile Include="..\third_party\imgui_backends\imgui_impl_dx12.cpp"><Filter>third_party\imgui_backends</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="src\Common.h"><Filter>src</Filter></ClInclude>
+    <ClInclude Include="src\Renderer.h"><Filter>src</Filter></ClInclude>
+    <ClInclude Include="src\Audio.h"><Filter>src</Filter></ClInclude>
+    <ClInclude Include="src\Console.h"><Filter>src</Filter></ClInclude>
+    <ClInclude Include="src\Camera.h"><Filter>src</Filter></ClInclude>
+    <ClInclude Include="src\Scene.h"><Filter>src</Filter></ClInclude>
+    <ClInclude Include="src\AssetLoader.h"><Filter>src</Filter></ClInclude>
+    <ClInclude Include="src\MmdLoader.h"><Filter>src</Filter></ClInclude>
+    <ClInclude Include="src\Input.h"><Filter>src</Filter></ClInclude>
+    <ClInclude Include="..\third_party\imgui_backends\imgui_impl_win32.h"><Filter>third_party\imgui_backends</Filter></ClInclude>
+    <ClInclude Include="..\third_party\imgui_backends\imgui_impl_dx12.h"><Filter>third_party\imgui_backends</Filter></ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="shaders\Geometry.hlsl"><Filter>shaders</Filter></None>
+    <None Include="shaders\Lighting.hlsl"><Filter>shaders</Filter></None>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,14 @@
+{
+  "name": "deferred-renderer",
+  "version-string": "0.1.0",
+  "builtin-baseline": "12dcccadfe573d0eaa6c67a968413ded7805d256",
+  "dependencies": [
+    "assimp",
+    "directxtk12",
+    "directx-headers",
+    "glm",
+    "bullet3",
+    "fmt",
+    "imgui"
+  ]
+}
