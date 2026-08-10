@@ -255,6 +255,28 @@ float EfFaceSdfMask(Texture2D sdfTex, float2 uv, float3 projLight, float side, f
     return saturate(1.0 / max(gooDenom, 1e-4));
 }
 
+// Kajiya-Kay hair angel ring, distilled from endfield_hair_specular.hlsl. The strand binormal =
+// cross(HN, strandDir); the RS LUT is indexed by along-strand anisotropy (U = sin^powStr · reflec) and
+// a view/light-facing gate (V). Uses a CAMERA-flattened normal so the ring rides the head, not the light.
+float3 EfHairKajiyaKay(Texture2D rsTex, float3 HN, float3 strandTan, float3 camFwd, float3 V, float3 L,
+                       float reflec, float powStr, float vPow)
+{
+    float3 camRight = normalize(cross(float3(0, 1, 0), camFwd) + float3(1e-6, 0, 0));
+    float3 cylN     = normalize(HN - dot(HN, camRight) * camRight);
+    float3 flatHN   = normalize(lerp(HN, cylN, 0.6));
+    float3 strandO  = strandTan - HN * dot(HN, strandTan);
+    float3 strandD  = dot(strandO, strandO) > 1e-8 ? normalize(strandO) : strandTan;
+    float3 hairBin  = normalize(cross(HN, strandD));
+    float  ToH      = dot(normalize(V + L), hairBin);
+    float  sinT     = sqrt(max(1e-4, 1.0 - ToH * ToH));
+    float  lutU     = saturate(exp2(powStr * log2(sinT)) * reflec);
+    float2 vdP      = float2(dot(V,  camRight), dot(V,  camFwd));
+    float2 hnP      = float2(dot(HN, camRight), dot(HN, camFwd));
+    float  VoHN     = pow(saturate(dot(vdP, hnP)), vPow);
+    float  lutV     = VoHN * VoHN * step(0.0, ToH);
+    return rsTex.Sample(gClamp, float2(lutU, lutV)).rgb;
+}
+
 // Tangent-space normal perturbation from screen-space derivatives (no vertex tangents needed).
 float3 PerturbNormal(float3 N, float3 posW, float2 uv, float3 mapN)
 {
@@ -464,16 +486,25 @@ float4 PSMain(VSOut i) : SV_TARGET
         col = lerp(col * lerp(1.0, 0.55, leatherAmt * saturate(sheenStrength)), studio, saturate(reflW));
     }
 
-    // --- Milestone 7: hair anisotropic "angel ring" (Kajiya-Kay approx; MMD has no hair tangent,
-    //     so approximate the strand direction as circling the head horizontally) ---
+    // --- STEP 5: hair Kajiya-Kay "angel ring" (ported from endfield_hair_specular.hlsl). Strand
+    //     direction from the UV gradient (hair runs along V); the RS LUT (t9) supplies the highlight
+    //     colour/shape; P.g is the spec rhythm; P.a × hairline (t13) inks the dark strand lines. ---
     if (isHair != 0 && hairStrength > 0.0) {
-        float3 T = normalize(cross(N, float3(0.0, 1.0, 0.0)) + 1e-4);
-        float  dTH = dot(T, H);
-        float  sinTH = sqrt(saturate(1.0 - dTH * dTH));
-        // _P.G = hair anisotropic-highlight mask → the sheen appears where the texture marks the
-        // strand highlights (broken band), not as a uniform ring. Small floor keeps a base sheen.
-        float  hairMask = hasPacked ? saturate(P.g + 0.1) : 1.0;
-        col += pow(sinTH, 120.0) * hairStrength * lit * lightIntensity * hairMask;
+        // Along-strand world tangent from the V-axis UV gradient.
+        float3 dpx = ddx(i.posW), dpy = ddy(i.posW);
+        float2 dux = ddx(i.uv),   duy = ddy(i.uv);
+        float  det = dux.x * duy.y - dux.y * duy.x;
+        float3 strandTan = normalize((dpx * dux.y - dpy * duy.y) * (det < 0.0 ? -1.0 : 1.0) + float3(1e-6, 0, 0));
+        float  reflec = hasPacked ? saturate(P.g + 0.15) : 0.5;   // _P.G spec rhythm
+        float3 kk = (nprMask & 8)
+                  ? EfHairKajiyaKay(gReflect, N, strandTan, camFwd, V, L, reflec, 8.0, 2.0)
+                  : pow(sqrt(saturate(1.0 - dot(normalize(cross(N, float3(0,1,0))), H) * dot(normalize(cross(N, float3(0,1,0))), H))), 120.0).xxx;
+        col += kk * hairStrength * lit * lightIntensity;
+        // Dark strand lines: _P.A × hairline mask deepens the ink between strands.
+        if (nprMask & 16) {
+            float darkLine = saturate(P.a) * saturate(gHairDet.Sample(gSamp, i.uv).r);
+            col *= lerp(1.0, 0.65, darkLine);
+        }
     }
 
     // --- Milestone 7: rim light (subtle, environment-tinted) + emissive ---
