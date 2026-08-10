@@ -99,8 +99,13 @@ struct PerFrameCB {
     // CharDepth view: x = nearest, y = farthest view-space depth of the character this frame, so
     // its own depth span fills the full 0..1 output range. zw unused.
     XMFLOAT4   charDepthRange;
+    // Endfield face SDF: head-bone basis in WORLD space (MMD -front/-right convention applied).
+    // headValid = 1 when a head bone was found this frame (else the face falls back to geometric NoL).
+    XMFLOAT3   headFront;  float headValid;
+    XMFLOAT3   headRight;  float _hpad0;
+    XMFLOAT3   headUp;     float _hpad1;
 };
-static_assert(sizeof(PerFrameCB) == 288, "PerFrameCB layout drift");
+static_assert(sizeof(PerFrameCB) == 336, "PerFrameCB layout drift");
 
 struct PerObjectCB {
     XMFLOAT4X4 world;
@@ -3012,6 +3017,29 @@ void Renderer::Render() {
     data->outlineDarken = m_outlineDarken;
     data->captureBg     = { m_captureBg.x, m_captureBg.y, m_captureBg.z,
                             m_captureIsolated ? 1.0f : 0.0f };
+
+    // Endfield face SDF: head-bone basis in world space. Model-space bone axes → world (rotation of
+    // m_mmd.world) → MMD -front/-right convention + re-orthogonalize (matches EfFaceGetHeadBasis).
+    data->headFront = { 0.0f, 0.0f, -1.0f };
+    data->headRight = { -1.0f, 0.0f, 0.0f };
+    data->headUp    = { 0.0f, 1.0f, 0.0f };
+    data->headValid = 0.0f;
+    if (m_animator) {
+        XMFLOAT3 mFwd, mRight;
+        if (m_animator->HeadBasis(mFwd, mRight)) {
+            XMMATRIX world  = XMLoadFloat4x4(&m_mmd.world);
+            XMVECTOR fwdW   = XMVector3Normalize(XMVector3TransformNormal(XMLoadFloat3(&mFwd),   world));
+            XMVECTOR rightW = XMVector3Normalize(XMVector3TransformNormal(XMLoadFloat3(&mRight), world));
+            XMVECTOR hf = XMVectorNegate(fwdW);
+            XMVECTOR hr = XMVectorNegate(rightW);
+            XMVECTOR hu = XMVector3Normalize(XMVector3Cross(hf, hr));
+            hr = XMVector3Normalize(XMVector3Cross(hu, hf));   // re-orthogonalize
+            XMStoreFloat3(&data->headFront, hf);
+            XMStoreFloat3(&data->headRight, hr);
+            XMStoreFloat3(&data->headUp,    hu);
+            data->headValid = 1.0f;
+        }
+    }
 
     // CharDepth range: the character's model-space bounds through its world matrix and into view
     // space. Its own depth span then fills the whole 0..1 output instead of a sliver of [0, zFar].

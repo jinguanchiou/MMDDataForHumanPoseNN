@@ -97,6 +97,10 @@ public:
     // Reads every bone's final transform for the current frame. Call after Update/SeekTo/UpdateTo
     // (i.e. after a Step) so the transforms reflect the frame being captured.
     void   ExtractPose(std::vector<BonePose>& out) const;
+    // Model-space head-bone basis for the Endfield face SDF: outFwd = the bone's Z axis, outRight =
+    // its X axis (raw, un-negated — the renderer applies the MMD -front/-right convention in world
+    // space). Returns false if there's no head bone. Cheap: finds the 頭/head node, reads one matrix.
+    bool   HeadBasis(DirectX::XMFLOAT3& outFwd, DirectX::XMFLOAT3& outRight) const;
 
     saba::MMDModel* Model() const;   // for one-time GPU resource building
     const std::vector<std::string>& MaterialNames() const;

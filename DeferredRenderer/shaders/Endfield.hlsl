@@ -15,6 +15,10 @@ cbuffer PerFrame : register(b0)
     float  shadowBias;       float shadowTexel;
     float  outlineDarken;    float _pad1;
     float4 captureBg;
+    float4 charDepthRange;   // (unused here — layout parity with PerFrameCB)
+    float3 headFront;  float headValid;   // Endfield face SDF: head-bone basis (world) + valid flag
+    float3 headRight;  float _hpad0;
+    float3 headUp;     float _hpad1;
 };
 
 cbuffer EndfieldObject : register(b1)
@@ -235,6 +239,26 @@ float3 EfApplyRampColor(float3 diffuse, float4 ramp)
     return diffRamp * rampCtrl;
 }
 
+// Face SDF (Goo) shadow → the ramp U for the face. 1 = lit, 0 = shadowed. Ported from endfield_face.hlsl:
+// project the to-light L onto the face plane, mirror the SDF UV by light side, then a continuous angular
+// threshold (atan2) drives a sharp sigmoid over the averaged SDF R/G channels. Needs the world head basis.
+float EfFaceSdfMask(Texture2D sdfTex, float2 uv, float3 L, float3 hFront, float3 hRight, float3 hUp)
+{
+    float3 projLight = L - dot(L, hUp) * hUp;
+    float  projLen   = length(projLight);
+    if (projLen < 1e-4) return 1.0;               // vertical light: no stable side
+    projLight /= projLen;
+    float  side  = dot(projLight, hRight);
+    float2 sdfUV = float2(lerp(1.0 - uv.x, uv.x, step(0.0, side)), uv.y);  // right-side light keeps U
+    float4 sdf   = sdfTex.Sample(gClamp, sdfUV);
+    float  angle01   = abs(atan2(side, dot(projLight, hFront))) * (1.0 / 3.14159265);
+    float  sdfAvg    = saturate(0.5 * (sdf.r + sdf.g));
+    float  gooCenter = saturate(angle01) + 0.1;   // EF_FACE_SDF_GOO_CENTER
+    float  gooExp    = -3.0 * 0.5 * (sdfAvg - gooCenter);   // EF_FACE_SDF_GOO_SHARP = 0.5
+    float  gooDenom  = 1.0 + pow(100000.0, gooExp);         // EF_FACE_SDF_GOO_BASE
+    return saturate(1.0 / max(gooDenom, 1e-4));
+}
+
 // Tangent-space normal perturbation from screen-space derivatives (no vertex tangents needed).
 float3 PerturbNormal(float3 N, float3 posW, float2 uv, float3 mapN)
 {
@@ -257,7 +281,7 @@ float4 PSMain(VSOut i) : SV_TARGET
     clip(base.a - (transparentMode == 0 ? 0.3 : 0.004));
 
     // --- Debug channel views (2..8) ---
-    if (debugMode >= 2) {
+    if (debugMode >= 2 && debugMode <= 8) {
         float3 c;
         // Gate each channel by the map's presence, so a material that LACKS the map shows BLACK
         // rather than the white 1x1 fallback (which made the _P-less face read as "fully metallic").
@@ -306,9 +330,22 @@ float4 PSMain(VSOut i) : SV_TARGET
 
     float3 camFwd    = normalize(i.posW - cameraPos);           // camera forward (view ray into scene)
     float  backLight = EfBackLight(camFwd, normalize(L.xz + float2(1e-6, 0.0)));
-    float  rampNoF   = EfRampNoL(NoL, backLight);               // ramp U
     float4 P  = gPacked.Sample(gSamp, i.uv);
-    float  ao = hasPacked ? saturate(P.b) : 1.0;
+    // STEP 3: the face drives the ramp U from the SDF Goo shadow (not NoL); cm_M.g blends toward
+    // geometric NoL on the neck/non-face. Face AO lives in _D.alpha. Everything else uses the ramp NoL.
+    float  rampNoF;
+    float  ao;
+    if (isFaceMat && (nprMask & 32) && headValid > 0.5) {
+        float gooMask  = EfFaceSdfMask(gSdf, i.uv, L, headFront, headRight, headUp);
+        float cmmBlend = (nprMask & 64) ? saturate(gCm.Sample(gSamp, i.uv).g) : 0.0;
+        rampNoF = lerp(gooMask, saturate(NoL), cmmBlend);
+        ao      = saturate(base.a);                            // face AO = _D.alpha
+    } else {
+        rampNoF = EfRampNoL(NoL, backLight);
+        ao      = hasPacked ? saturate(P.b) : 1.0;
+    }
+    // edbg 9 (face only): R = SDF Goo mask (1 lit / 0 shadow), G = headValid, B = has-SDF-map.
+    if (debugMode == 9 && isFaceMat) return float4(rampNoF, headValid, (nprMask & 32) ? 1.0 : 0.0, 1.0);
     float4 rd = (nprMask & 1) ? gRamp.Sample(gClamp, float2(rampNoF, 0.5)) : float4(1, 1, 1, 1);
 
     // STEP 2: dark colour = the skin/cloth LUT lookup (sRGB in → sRGB out → linearise), NOT a darken.

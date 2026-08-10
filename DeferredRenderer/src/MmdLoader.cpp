@@ -406,6 +406,24 @@ void MmdAnimator::ExtractPose(std::vector<BonePose>& out) const {
     }
 }
 
+bool MmdAnimator::HeadBasis(DirectX::XMFLOAT3& outFwd, DirectX::XMFLOAT3& outRight) const {
+    if (!m_impl->model) return false;
+    auto* mgr = m_impl->model->GetNodeManager();
+    const size_t n = mgr->GetNodeCount();
+    for (size_t i = 0; i < n; ++i) {
+        auto* node = mgr->GetMMDNode(i);
+        const std::string& nm = node->GetName();
+        // MMD head bone is 頭; accept romanized variants too.
+        if (nm == "\xE9\xA0\xAD" || nm == "head" || nm == "Head" || nm == "\xE9\xA0\xAD\xE5\x85\x88") {
+            const glm::mat4& g = node->GetGlobalTransform();  // model-space, final (VMD+IK+physics)
+            outFwd   = { g[2].x, g[2].y, g[2].z };   // bone Z axis (forward, pre-negate)
+            outRight = { g[0].x, g[0].y, g[0].z };   // bone X axis (right, pre-negate)
+            return true;
+        }
+    }
+    return false;
+}
+
 // ============================== ProbeMmd ==============================
 
 bool ProbeMmd(const std::wstring& pmxPath, const std::wstring& vmdPath) {
