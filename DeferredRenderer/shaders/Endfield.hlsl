@@ -74,7 +74,7 @@ cbuffer EndfieldMaterial : register(b2)   // look/material params (set once per 
     float3 rimColor;      float shadowDepth;   // dark-side brightness (lower = darker; low-contrast ≈ 0.6)
     float  _zzz0, _zzz1, _zzz2, _zzz3;         // ZZZ colour-grade row (deepen/warmth/eyeLift/_mpad) — unused here
     float  charShadows, charHighlights, specFocus, sheenStrength;   // per-char tone + spec focus + leather sheen
-    float  hairRange, _hr1, _hr2, _hr3;   // hair KK angel-ring band width (higher = narrower/sharper)
+    float  hairRange, faceSdfOn, _hr2, _hr3;   // hair KK band width; faceSdfOn = 1 → SDF face (else flat)
 };
 
 Texture2D    gBase   : register(t0);   // _D BaseColor
@@ -341,6 +341,13 @@ float4 PSMain(VSOut i) : SV_TARGET
     float NoL       = dot(N, L);
     float rawShadow = ShadowVis(i.posW, saturate(NoL));         // 1 lit, 0 shadowed
     bool   isFaceMat = (matClass == 1) && ((nprMask & 2) != 0);
+    // Reference DEFAULT face (endfield_face.hlsl production path, all SDF/SSS/Rim flags off): flat
+    // painted albedo × baked AO (_D.alpha), NO dynamic lighting — this is the game's even-lit face.
+    // SDF/ramp/LUT only run when faceSdfOn is toggled on (GUI "Face SDF shadow" / console `facesdf`).
+    if (matClass == 1 && faceSdfOn < 0.5) {
+        float aoFlat = saturate(base.a);
+        return float4(baseLin * aoFlat, base.a);
+    }
     float3 faceMask  = isFaceMat ? gSubsurf.Sample(gSamp, i.uv).rgb : float3(1, 0, 0);   // _ST
     float4 faceCm    = (isFaceMat && (nprMask & 64)) ? gCm.Sample(gSamp, i.uv) : float4(0, 0, 0, 0);
 

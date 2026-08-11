@@ -339,6 +339,16 @@ static void HandleCommand(const std::string& rawLine) {
         return;
     }
 
+    if (cmd == "facesdf") {
+        auto& r = g_app->renderer;
+        std::string a; iss >> a;
+        if (a == "on" || a == "off") r.FaceSdfRef() = (a == "on");
+        std::printf("[facesdf] face SDF shadow %s  (off = flat painted face, matches the game)\n",
+                    r.FaceSdfRef() ? "ON" : "OFF");
+        std::fflush(stdout);
+        return;
+    }
+
     if (cmd == "hairrange" || cmd == "hairrng") {
         auto& r = g_app->renderer;
         float v;
