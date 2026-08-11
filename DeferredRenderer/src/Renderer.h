@@ -178,6 +178,7 @@ public:
     float& HighlightsRef()    { return m_highlights; }
     float& SpecFocusRef()     { return m_efSpecFocus; }
     float& SheenRef()         { return m_efSheen; }
+    float& HairRangeRef()     { return m_efHairRange; }
     float& EfFidelityRef()    { return m_efFidelity; }
     float  Ssaa() const       { return m_ssaa; }
     void   RequestSsaa(float s) { m_pendingSsaa.store(s); }   // thread-safe; applied at next frame top
@@ -358,6 +359,7 @@ private:
     float                        m_efSpec = 0.25f, m_efRoughBias = 0.0f;
     float                        m_efRim = 0.15f, m_efRimPow = 4.0f, m_efEmiss = 1.0f;
     float                        m_efHair = 0.4f;   // hair angel-ring highlight strength
+    float                        m_efHairRange = 40.0f;  // hair KK band width (higher = narrower/sharper, less "oily")
     bool                         m_efNormalMap = true;
     bool                         m_efFlipNormalY = false;  // flip _N green channel (DX vs GL)
     float                        m_efShadowStr = 0.65f;  // received cast-shadow strength ("Shadow recv"; user-set)

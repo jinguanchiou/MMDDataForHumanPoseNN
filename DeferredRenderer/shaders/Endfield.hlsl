@@ -74,6 +74,7 @@ cbuffer EndfieldMaterial : register(b2)   // look/material params (set once per 
     float3 rimColor;      float shadowDepth;   // dark-side brightness (lower = darker; low-contrast ≈ 0.6)
     float  _zzz0, _zzz1, _zzz2, _zzz3;         // ZZZ colour-grade row (deepen/warmth/eyeLift/_mpad) — unused here
     float  charShadows, charHighlights, specFocus, sheenStrength;   // per-char tone + spec focus + leather sheen
+    float  hairRange, _hr1, _hr2, _hr3;   // hair KK angel-ring band width (higher = narrower/sharper)
 };
 
 Texture2D    gBase   : register(t0);   // _D BaseColor
@@ -506,7 +507,7 @@ float4 PSMain(VSOut i) : SV_TARGET
         float3 strandTan = normalize((dpx * dux.y - dpy * duy.y) * (det < 0.0 ? -1.0 : 1.0) + float3(1e-6, 0, 0));
         float  reflec = hasPacked ? saturate(P.g + 0.15) : 0.5;   // _P.G spec rhythm
         float3 kk = (nprMask & 8)
-                  ? EfHairKajiyaKay(gReflect, N, strandTan, camFwd, V, L, reflec, 8.0, 2.0)
+                  ? EfHairKajiyaKay(gReflect, N, strandTan, camFwd, V, L, reflec, max(hairRange, 1.0), 2.0)
                   : pow(sqrt(saturate(1.0 - dot(normalize(cross(N, float3(0,1,0))), H) * dot(normalize(cross(N, float3(0,1,0))), H))), 120.0).xxx;
         col += kk * hairStrength * lit * lightIntensity;
         // Dark strand lines: _P.A × hairline mask deepens the ink between strands.

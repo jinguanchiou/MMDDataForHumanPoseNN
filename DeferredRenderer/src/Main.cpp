@@ -19,6 +19,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <clocale>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -338,6 +339,15 @@ static void HandleCommand(const std::string& rawLine) {
         return;
     }
 
+    if (cmd == "hairrange" || cmd == "hairrng") {
+        auto& r = g_app->renderer;
+        float v;
+        if (iss >> v) { r.HairRangeRef() = v; std::printf("[hairrange] hair KK band width = %.1f  (higher = narrower/sharper)\n", v); }
+        else          { std::printf("[hairrange] = %.1f   Usage: hairrange <4..120>\n", r.HairRangeRef()); }
+        std::fflush(stdout);
+        return;
+    }
+
     if (cmd == "ssaa" || cmd == "aa") {
         auto& r = g_app->renderer;
         float v;
@@ -392,10 +402,39 @@ static void HandleCommand(const std::string& rawLine) {
         else if (sub == "name")      { std::string ch, mo; if (iss >> ch) c.character = ch; if (iss >> mo) c.motion = mo; }
         else if (sub == "seed")      { unsigned v; if (iss >> v) c.seed = v; }
         else if (sub == "joints")    { std::string v; iss >> v; c.canonicalJointsOnly = (v != "all" && v != "raw"); }
+        else if (sub == "styles") {
+            std::string v; iss >> v;
+            if (v == "all") c.styles.clear();                 // empty = every style
+            else if (!v.empty()) {                            // comma list, e.g. native,char_depth
+                std::vector<int> picked;
+                for (size_t pos = 0; pos <= v.size(); ) {
+                    const size_t comma = v.find(',', pos);
+                    const std::string one = v.substr(pos, comma == std::string::npos ? std::string::npos
+                                                                                     : comma - pos);
+                    if (!one.empty()) {
+                        int found = -1;
+                        for (int s = 0; s < static_cast<int>(dr::StyleId::Count); ++s)
+                            if (one == dr::StyleName(static_cast<dr::StyleId>(s))) { found = s; break; }
+                        if (found >= 0) picked.push_back(found);
+                        else std::printf("[dataset] unknown style '%s'\n", one.c_str());
+                    }
+                    if (comma == std::string::npos) break;
+                    pos = comma + 1;
+                }
+                if (picked.empty()) {
+                    picked.push_back(static_cast<int>(dr::StyleId::Native));
+                    std::printf("[dataset] nothing valid given; back to 'native'\n");
+                }
+                c.styles = picked;
+            }
+        }
         else if (!sub.empty() && sub != "info" && sub != "status") {
             std::printf("Usage: dataset [gen | frames N | az N | elev N MIN MAX | size N |\n"
                         "               crop P | margin F | bg iso|scene|both | out DIR | name CHAR MOTION |\n"
-                        "               seed N | joints canonical|all]\n");
+                        "               seed N | joints canonical|all | styles all|<name,name,...>]\n");
+            for (int s = 0; s < static_cast<int>(dr::StyleId::Count); ++s)
+                std::printf("%s%s", s ? ", " : "  styles: ", dr::StyleName(static_cast<dr::StyleId>(s)));
+            std::printf("\n");
             return;
         }
         std::printf("[dataset] char=%s motion=%s  frames=%d az=%d elev=%dx[%.0f,%.0f] size=%d joints=%s\n"
@@ -405,7 +444,10 @@ static void HandleCommand(const std::string& rawLine) {
                     c.canonicalJointsOnly ? "canonical" : "all",
                     c.enableCrops ? "on" : "off", c.cropProb,
                     c.bgIsolated ? "iso " : "", c.bgScene ? "scene" : "",
-                    c.styles.empty() ? "all" : "subset",
+                    c.styles.empty() ? "all"
+                                     : (c.styles.size() == 1
+                                            ? dr::StyleName(static_cast<dr::StyleId>(c.styles[0]))
+                                            : "subset"),
                     dr::EstimateSampleCount(c, r.HasAnimation() ? 0.0 : 0.0),
                     r.DatasetBusy() ? "  [RUNNING]" : "");
         std::fflush(stdout);
@@ -1505,6 +1547,10 @@ int main() {
     const UINT prevInCP  = GetConsoleCP();
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
+    // printf("%ls") converts wide -> multibyte through the C locale, which in the default "C"
+    // locale stops dead at the first non-ASCII character — that is why paths with CJK folder names
+    // printed truncated. UTF-8 here matches the console code page set above.
+    std::setlocale(LC_ALL, ".UTF8");
     PrintBanner();
 
     AppState app;

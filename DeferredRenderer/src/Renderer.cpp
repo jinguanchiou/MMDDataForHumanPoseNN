@@ -192,6 +192,7 @@ struct EndfieldMaterialCB {     // matches cbuffer EndfieldMaterial in Endfield.
     // charShadows/charHighlights = luminance-masked detail lift/recover ON THE CHARACTER only
     // (not the whole scene); specFocus = concentrate the specular highlight (tighter spot).
     float    charShadows, charHighlights, specFocus, sheenStrength;
+    float    hairRange, _hr1, _hr2, _hr3;   // Endfield hair KK angel-ring band width (higher = narrower)
 };
 
 struct SsaoCB {                 // matches cbuffer SsaoCB in Ssao.hlsl
@@ -2081,6 +2082,8 @@ void Renderer::BuildImGuiUI() {
         ImGui::SliderFloat("Rim strength", &m_efRim,    0.0f, 1.0f);
         ImGui::SliderFloat("Rim power",    &m_efRimPow, 1.0f, 8.0f);
         ImGui::SliderFloat("Hair ring",    &m_efHair,   0.0f, 2.0f);
+        ImGui::SliderFloat("Hair range",   &m_efHairRange, 4.0f, 120.0f);
+        ImGui::SameLine(); ImGui::TextDisabled("(higher = narrower band, less oily)");
         ImGui::SliderFloat("Emissive",     &m_efEmiss,  0.0f, 4.0f);
         // Endfield-only look tools (leather sheen / fidelity / spec focus / char tone). Kept OUT of
         // the ZZZ/Wuwa paths so they don't leak into those profiles (they render with their own look).
@@ -3657,6 +3660,7 @@ void Renderer::Render() {
             m->charHighlights = efp ? m_highlights : 0.0f;
             m->specFocus = efp ? m_efSpecFocus : 0.0f;
             m->sheenStrength = efp ? m_efSheen : 0.0f;
+            m->hairRange = m_efHairRange;
             m_cmd->SetGraphicsRootConstantBufferView(7, mc.GpuAddress());
         }
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -4010,6 +4014,10 @@ void Renderer::GenerateDataset(const DatasetConfig& cfgIn) {
     // The worker owns the animator; stop it so we can seek + skin deterministically here.
     StopAnimThread();
     m_camMotionOn = false;                       // use the free-fly camera we aim per view
+    // Sponza's 128 point lights stay off for every capture: they belong to a scene the cut-out does
+    // not show, and their contribution would depend on where the character happens to stand.
+    // Measured on an Endfield character: enabling them moves the mean luminance by less than the
+    // run-to-run pose jitter, so there is nothing to gain and determinism to lose.
     m_forwardPlus = false; m_fpDebugHeat = false; m_pointShadowOn = false; m_charXray = false;
     m_imguiVisible = false;                       // keep the control panel out of the shots
     m_vsync = false;                              // capture as fast as the GPU allows
@@ -4049,6 +4057,17 @@ void Renderer::GenerateDataset(const DatasetConfig& cfgIn) {
 
     std::mt19937 rng(cfg.seed);
     std::uniform_real_distribution<float> u01(0.0f, 1.0f);
+
+    // Native = capture the character exactly as its own profile renders it, with the look that is
+    // live right now. Every other style deliberately stomps exposure/saturation/light to a shared
+    // baseline, which would flatten the per-profile tuning each model was set up with.
+    auto applyStyle = [&](int st) {
+        if (st != static_cast<int>(StyleId::Native)) { ApplyDatasetStyle(st, rng); return; }
+        m_view         = ViewMode::Color;    // a picture, whatever debug view was on screen
+        m_bloomEnabled = sBloom; m_ssaoEnabled = sSsao; m_dirLightOn = sDir;
+        m_exposure = sExp; m_vibrance = sVib; m_charSat = sSat; m_charContrast = sCon;
+        m_specInt  = sSpec; m_lightDir = sLightDir; m_lightTint = sTint;
+    };
 
     // ---- view list: base hemisphere grid + optional truncated crop views ----
     struct ViewSpec { float az, el; BodyPart part; };
@@ -4189,7 +4208,7 @@ void Renderer::GenerateDataset(const DatasetConfig& cfgIn) {
                 m.annFile = std::string(annStem) + ".json";
 
                 for (int st : styles) {
-                    ApplyDatasetStyle(st, rng);
+                    applyStyle(st);
                     StreamSkinnedVertices();   // upload this frame's skinned verts into the dynamic VB
                     Render();                  // draw + present one capture frame
 
