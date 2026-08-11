@@ -916,12 +916,17 @@ bool BuildSceneFromMmd(
                 if (nameEye && !nameDark) sm.isEye = true;
             }
             // Body/face skin (TEX_LML_Skin / SkinSotai / Face) → eligible for SSS, and (Endfield) the
-            // face material for the _ST shadow-param mask + SDF. Game rips name skin LOWERCASE
-            // (T_actor_*_face_), which the capitalised-only match missed; cel/ZZZ use caps or CJK so
-            // they're unaffected. NOTE: "face" only (not "body") so the latex bodysuit stays cloth.
+            // skin path (flat albedo×AO). Game rips name skin LOWERCASE (T_actor_*_face_/_body_), which
+            // the capitalised-only match missed. A "body_" material is bare skin ONLY when it has no _P
+            // (arms/neck) — a body_ WITH _P is a bodysuit (别礼) and stays cloth. So the face + the arms/
+            // hands share the same flat skin tone, fixing the face-too-white-vs-fingers mismatch.
+            const bool bodyNoPacked = mtex.find("body") != std::string::npos &&
+                (matId < 0 || static_cast<size_t>(matId) >= matPackedIdx.size() ||
+                 matPackedIdx[matId] == whiteIndex);
             sm.isSkin = mtex.find("Skin") != std::string::npos ||
                         mtex.find("Face") != std::string::npos ||
-                        mtex.find("face") != std::string::npos;
+                        mtex.find("face") != std::string::npos ||
+                        bodyNoPacked;
             // Hair material (Endfield angel-ring highlight). Match common naming, incl. game rips.
             sm.isHair = mtex.find("hair") != std::string::npos ||
                         mtex.find("Hair") != std::string::npos ||
