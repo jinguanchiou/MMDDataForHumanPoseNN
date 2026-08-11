@@ -180,6 +180,7 @@ public:
     float& SheenRef()         { return m_efSheen; }
     float& HairRangeRef()     { return m_efHairRange; }
     bool&  FaceSdfRef()       { return m_efFaceSdf; }
+    float& FaceFloorRef()     { return m_efFaceFloor; }
     float& EfFidelityRef()    { return m_efFidelity; }
     float  Ssaa() const       { return m_ssaa; }
     void   RequestSsaa(float s) { m_pendingSsaa.store(s); }   // thread-safe; applied at next frame top
@@ -362,6 +363,7 @@ private:
     float                        m_efHair = 0.4f;   // hair angel-ring highlight strength
     float                        m_efHairRange = 40.0f;  // hair KK band width (higher = narrower/sharper, less "oily")
     bool                         m_efFaceSdf = false;    // face SDF shadow — OFF by default (ref default = flat painted face)
+    float                        m_efFaceFloor = 0.6f;   // face flatness: 1 = flat/bright, lower = shaded like the body
     bool                         m_efNormalMap = true;
     bool                         m_efFlipNormalY = false;  // flip _N green channel (DX vs GL)
     float                        m_efShadowStr = 0.65f;  // received cast-shadow strength ("Shadow recv"; user-set)

@@ -349,6 +349,15 @@ static void HandleCommand(const std::string& rawLine) {
         return;
     }
 
+    if (cmd == "faceflat") {
+        auto& r = g_app->renderer;
+        float v;
+        if (iss >> v) { r.FaceFloorRef() = v; std::printf("[faceflat] face flatness = %.2f  (1 = flat/bright, lower = shaded like body)\n", v); }
+        else          { std::printf("[faceflat] = %.2f   Usage: faceflat <0..1>\n", r.FaceFloorRef()); }
+        std::fflush(stdout);
+        return;
+    }
+
     if (cmd == "hairrange" || cmd == "hairrng") {
         auto& r = g_app->renderer;
         float v;

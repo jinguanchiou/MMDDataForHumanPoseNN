@@ -192,7 +192,7 @@ struct EndfieldMaterialCB {     // matches cbuffer EndfieldMaterial in Endfield.
     // charShadows/charHighlights = luminance-masked detail lift/recover ON THE CHARACTER only
     // (not the whole scene); specFocus = concentrate the specular highlight (tighter spot).
     float    charShadows, charHighlights, specFocus, sheenStrength;
-    float    hairRange, faceSdfOn, _hr2, _hr3;   // hair KK band width; faceSdfOn = 1 → SDF face (else flat)
+    float    hairRange, faceSdfOn, faceFlatFloor, _hr3;   // faceFlatFloor: 1 = flat/bright, 0 = full body shading
 };
 
 struct SsaoCB {                 // matches cbuffer SsaoCB in Ssao.hlsl
@@ -2086,6 +2086,10 @@ void Renderer::BuildImGuiUI() {
         ImGui::SameLine(); ImGui::TextDisabled("(higher = narrower band, less oily)");
         ImGui::Checkbox("Face SDF shadow", &m_efFaceSdf);
         ImGui::SameLine(); ImGui::TextDisabled("(off = flat painted face, matches game)");
+        if (!m_efFaceSdf) {
+            ImGui::SliderFloat("Face flatness", &m_efFaceFloor, 0.0f, 1.0f);
+            ImGui::SameLine(); ImGui::TextDisabled("(1 = flat/bright, lower = shaded like body)");
+        }
         ImGui::SliderFloat("Emissive",     &m_efEmiss,  0.0f, 4.0f);
         // Endfield-only look tools (leather sheen / fidelity / spec focus / char tone). Kept OUT of
         // the ZZZ/Wuwa paths so they don't leak into those profiles (they render with their own look).
@@ -3664,6 +3668,7 @@ void Renderer::Render() {
             m->sheenStrength = efp ? m_efSheen : 0.0f;
             m->hairRange = m_efHairRange;
             m->faceSdfOn = (efp && m_efFaceSdf) ? 1.0f : 0.0f;
+            m->faceFlatFloor = m_efFaceFloor;
             m_cmd->SetGraphicsRootConstantBufferView(7, mc.GpuAddress());
         }
         m_cmd->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
