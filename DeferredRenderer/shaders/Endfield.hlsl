@@ -425,35 +425,44 @@ float4 PSMain(VSOut i) : SV_TARGET
     if (transparentMode != 0)
         return float4(col, base.a);
 
-    // --- Milestone 6: NPR+PBR hybrid highlight (metal/rough from _P; kept low-intensity) ---
-    // No _P → neutral dielectric (metal 0, medium roughness) rather than the white fallback's 1,1.
-    // (P was sampled above for AO; reuse it for metal/rough.)
-    float  metal = hasPacked ? saturate(chan4(P, metalChan)) : 0.0;
-    float  rough = hasPacked
-                 ? saturate((invertRough ? 1.0 - chan4(P, roughChan) : chan4(P, roughChan)) + roughBias)
-                 : 0.5;
-    // Metals have (almost) NO diffuse — their look is the reflection, not a lit base colour. Our
-    // shader lit the metal albedo as diffuse, so gunmetal/buckles came out grey instead of black.
-    // Suppress the diffuse where metallic (from _P.R) so those parts read dark, per the game.
-    col *= (1.0 - metal * 0.9);
-    float  focusRough = rough * (1.0 - specFocus * 0.7);   // specFocus tightens the GGX lobe ONLY
+    // --- STEP 6: cloth PBR (ported from endfield_cloth.hlsl). _P: R = metallic, G = reflectivity,
+    //     B = AO, A = SMOOTHNESS → roughness = 1 - A. Direct GGX (D·V·Fresnel) coloured by the _RS LUT.
+    //     F0 = dielectric (0.06 · reflectivity) tinted to albedo for metal. ---
+    float  metal        = hasPacked ? saturate(chan4(P, metalChan)) : 0.0;
+    float  reflectivity = hasPacked ? saturate(P.g) : 0.5;
+    float  rough        = hasPacked ? saturate((1.0 - P.a) + roughBias) : 0.5;   // A is smoothness
+    col *= (1.0 - metal * 0.9);   // metals have ~no diffuse → gunmetal/buckles read dark
     float  ndh = saturate(dot(N, H));
     float  ndl = saturate(dot(N, L));
     float  ndv = saturate(dot(N, V));
-    // NPR: clean narrow Blinn-Phong highlight, gated to the lit side. specFocus shifts + narrows the
-    // smoothstep window so the highlight becomes a smaller, more concentrated spot.
-    float  nprSpec = smoothstep(lerp(0.72, 0.90, specFocus), lerp(0.76, 0.93, specFocus), ndh) * lit;
-    // PBR: GGX (Cook-Torrance NDF), higher roughness reads matte per spec.
-    float  a  = max(focusRough * focusRough, 0.002);
-    float  d  = (ndh * ndh * (a * a - 1.0) + 1.0);
-    float  ggx = (a * a) / (3.14159 * d * d + 1e-5);
-    float  pbrSpec = ggx * ndl;
-    float3 specTint = lerp(float3(1.0, 1.0, 1.0), baseLin, metal);   // metal tints the highlight
-    float  spec = lerp(nprSpec, pbrSpec, metal) * specStrength;
-    // Face _ST.G marks the nose/cheek highlight-strengthen region → lift the highlight there (kept
-    // restrained per the low-contrast style).
-    if (isFaceMat) spec *= (1.0 + faceMask.g * 0.6);
-    col += spec * specTint * lightIntensity;
+    if (hasPacked != 0 && isHair == 0 && !isFaceMat) {
+        float  fr    = saturate(rough * (1.0 - specFocus * 0.7));
+        float  r2    = max(fr * fr, 0.0078125);
+        float  a2    = r2 * r2;
+        float  denomA = ndh * ndh * (a2 - 1.0) + 1.0;
+        float  D     = a2 / max(denomA * denomA, 1e-5);                 // GGX NDF (no π, stylized)
+        float  ggxV  = ndl * sqrt(ndv * ndv * (1.0 - a2) + a2)
+                     + ndv * sqrt(ndl * ndl * (1.0 - a2) + a2);
+        float  Vis   = 0.5 / max(ggxV, 1e-4);                           // Smith joint visibility
+        float  lDotH = saturate(dot(L, H));
+        float3 f0    = lerp((0.06 * reflectivity).xxx, baseLin, metal); // dielectric ↔ metal-tinted
+        float3 fres  = f0 + (1.0 - f0) * pow(1.0 - lDotH, 5.0);
+        float  dv    = min(D * Vis, 40.0);                              // EF_CLOTH_SPECULAR_MAX
+        // _RS spec-colour LUT: U = GGX distribution·(rough²+ε), V = (1-metal)·rough.
+        float  denomR = ndh * ndh * (r2 - 1.0) + 1.0;
+        float  distR  = r2 / max(denomR * denomR, 1e-5);
+        float2 rsUv   = saturate(float2(distR * (r2 + 1e-4), (1.0 - metal) * rough));
+        float3 rsColor = (nprMask & 8) ? gReflect.Sample(gClamp, rsUv).rgb : float3(1, 1, 1);
+        float  specAo  = ao * 0.5 + 0.5;
+        float3 spec = dv * fres * rsColor * lerp(0.3, 1.0, ndl) * specAo * specStrength;
+        col += spec * lightIntensity * lerp(0.5, 1.0, lit);
+    } else {
+        // Face / hair: the restrained NPR highlight (hair also has its KK ring; face nose/cheek via _ST.G).
+        float nprSpec = smoothstep(lerp(0.72, 0.90, specFocus), lerp(0.76, 0.93, specFocus), ndh) * lit;
+        float spec = nprSpec * specStrength;
+        if (isFaceMat) spec *= (1.0 + faceMask.g * 0.6);
+        col += spec * lightIntensity;
+    }
 
     // --- Leather / latex sheen: the broad, wet specular that makes the bodysuit read as leather.
     //     It is NOT a tight glint — it is a WIDE soft lobe + a Fresnel edge-glow that spreads over the
