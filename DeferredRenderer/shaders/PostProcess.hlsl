@@ -85,6 +85,12 @@ float4 TonemapPS(VSOut i) : SV_TARGET
     // Global vibrance: push saturation for a punchier final image (GUI-controlled).
     float luma = dot(col, float3(0.2126, 0.7152, 0.0722));
     col = saturate(lerp(luma.xxx, col, vibrance));
+
+    // Blue-noise-style ordered dither, applied LAST (Endfield post chain §10.6): interleaved-gradient
+    // noise at ~1 LSB breaks the 8-bit banding the ACES curve leaves in smooth gradients (e.g. the
+    // grey backdrop, soft face shading) with no visible grain.
+    float ign = frac(52.9829189 * frac(dot(i.pos.xy, float2(0.06711056, 0.00583715))));
+    col += (ign - 0.5) / 255.0;
     return float4(col, outA);
 }
 
